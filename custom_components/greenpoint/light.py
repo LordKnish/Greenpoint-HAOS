@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.light import LightEntity
 from homeassistant.config_entries import ConfigEntry
