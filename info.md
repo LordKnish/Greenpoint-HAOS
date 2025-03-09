@@ -1,5 +1,9 @@
 # Greenpoint IGH Compact Integration
 
+<p align="center">
+  <img src="custom_components/greenpoint/icons/logo.png" alt="Greenpoint Logo" width="600"/>
+</p>
+
 This integration allows you to control and monitor your Greenpoint IGH Compact devices in Home Assistant.
 
 ## Features

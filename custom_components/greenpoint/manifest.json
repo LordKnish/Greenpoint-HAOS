@@ -8,5 +8,6 @@
   "codeowners": ["@username"],
   "requirements": ["aiohttp>=3.8.1"],
   "iot_class": "local_polling",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "icon": "mdi:home-automation"
 }
