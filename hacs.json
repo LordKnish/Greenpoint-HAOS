@@ -1,0 +1,7 @@
+{
+  "name": "Greenpoint IGH Compact",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": ["sensor", "binary_sensor", "switch", "light"],
+  "homeassistant": "2023.8.0"
+}
