@@ -15,7 +15,7 @@ API_HOME = "/home"
 API_SCENARIO = "/scenario"
 API_UNIT = "/unit"
 API_UNIT_LIST = "/unit/list"
-API_SCENARIO_LIST = "/scenario/list"
+API_SCENARIO_LIST = "/scenario"
 
 # Data attributes
 ATTR_ROOMS = "rooms"

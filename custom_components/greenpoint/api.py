@@ -8,10 +8,9 @@ from aiohttp import ClientSession
 from .const import (
     API_HOME,
     API_SCENARIO,
-    API_SCENARIO_LIST,
     API_UNIT,
-    API_UNIT_LIST,
     ATTR_ROOMS,
+    ATTR_UNITS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ class GreenpointApiClient:
     async def test_connection(self) -> bool:
         """Test the connection to the API."""
         try:
-            await self.get_unit_list()
+            await self.get_home_data()
             return True
         except Exception as e:
             _LOGGER.error("Failed to connect to API: %s", str(e))
@@ -64,17 +63,14 @@ class GreenpointApiClient:
             raise CannotConnect() from err
 
     async def get_unit_list(self) -> List[Dict[str, Any]]:
-        """Get list of units."""
+        """Get list of units from home data."""
         try:
-            async with self._get_session() as session:
-                async with session.get(
-                    f"{self._base_url}{API_UNIT_LIST}?token={self._token}"
-                ) as response:
-                    if response.status == 401:
-                        raise InvalidAuth()
-                    response.raise_for_status()
-                    return await response.json()
-        except aiohttp.ClientError as err:
+            home_data = await self.get_home_data()
+            units = []
+            for room in home_data.get(ATTR_ROOMS, []):
+                units.extend(room.get(ATTR_UNITS, []))
+            return units
+        except Exception as err:
             _LOGGER.error("Error getting unit list: %s", err)
             raise CannotConnect() from err
 
@@ -93,56 +89,15 @@ class GreenpointApiClient:
             _LOGGER.error("Error getting unit status: %s", err)
             raise CannotConnect() from err
 
-    async def get_scenarios(self) -> List[Dict[str, Any]]:
-        """Get list of available scenarios."""
-        try:
-            async with self._get_session() as session:
-                async with session.get(
-                    f"{self._base_url}{API_SCENARIO_LIST}?token={self._token}"
-                ) as response:
-                    if response.status == 401:
-                        raise InvalidAuth()
-                    response.raise_for_status()
-                    return await response.json()
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error getting scenarios: %s", err)
-            raise CannotConnect() from err
-
     async def run_scenario(self, scenario_name: str) -> bool:
         """Run a scenario by name."""
         try:
-            # First try to run the scenario directly
             async with self._get_session() as session:
                 async with session.get(
-                    f"{self._base_url}{API_SCENARIO}/{scenario_name}?token={self._token}"
+                    f"{self._base_url}{API_SCENARIO}?name={scenario_name}&token={self._token}"
                 ) as response:
                     if response.status == 401:
                         raise InvalidAuth()
-                    if response.status == 404:
-                        # If scenario not found, try to find a matching scenario
-                        scenarios = await self.get_scenarios()
-                        _LOGGER.debug("Available scenarios: %s", scenarios)
-                        
-                        # Look for a matching scenario
-                        matching_scenario = None
-                        for scenario in scenarios:
-                            if scenario.get("name") == scenario_name:
-                                matching_scenario = scenario
-                                break
-                        
-                        if matching_scenario:
-                            # Try running the matching scenario
-                            async with session.get(
-                                f"{self._base_url}{API_SCENARIO}/{matching_scenario['name']}?token={self._token}"
-                            ) as retry_response:
-                                if retry_response.status == 401:
-                                    raise InvalidAuth()
-                                retry_response.raise_for_status()
-                                return True
-                        else:
-                            _LOGGER.error("Scenario not found: %s", scenario_name)
-                            return False
-                    
                     response.raise_for_status()
                     return True
         except aiohttp.ClientError as err:

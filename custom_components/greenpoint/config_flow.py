@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import voluptuous as vol
 
@@ -41,16 +41,13 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not await client.test_connection():
                     raise CannotConnect()
 
-                # Check if scenarios are set up
-                scenarios = await client.get_scenarios()
-                if not scenarios:
-                    return await self.async_step_scenario_setup(user_input)
-
-                # Create entry
-                return self.async_create_entry(
-                    title=f"IGH Compact ({user_input[CONF_HOST]})",
-                    data=user_input,
-                )
+                # Get units to check what scenarios need to be created
+                units = await client.get_unit_list()
+                if not units:
+                    errors["base"] = "no_units"
+                else:
+                    # Show scenario setup instructions
+                    return await self.async_step_scenario_setup(user_input, units)
 
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -73,7 +70,7 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_scenario_setup(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: Dict[str, Any], units: List[Dict[str, Any]]
     ) -> FlowResult:
         """Handle the scenario setup step."""
         errors = {}
@@ -88,6 +85,15 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 errors["base"] = "scenarios_not_setup"
 
+        # Create list of required scenarios
+        required_scenarios = []
+        for unit in units:
+            unit_name = unit.get("name", "Unknown")
+            required_scenarios.extend([
+                f"{unit_name} On",
+                f"{unit_name} Off"
+            ])
+
         return self.async_show_form(
             step_id="scenario_setup",
             data_schema=vol.Schema(
@@ -96,7 +102,7 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             description_placeholders={
-                "scenario_setup_url": "https://github.com/your-repo/greenpoint-haos/wiki/Scenario-Setup",
+                "scenario_list": "\n".join(f"- {scenario}" for scenario in required_scenarios),
             },
             errors=errors,
         )
