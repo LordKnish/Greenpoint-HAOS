@@ -1,103 +1,81 @@
-"""Platform for Greenpoint IGH Compact switch integration."""
+"""Support for Greenpoint IGH Compact switches."""
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import GreenpointDataUpdateCoordinator
-from .const import DOMAIN
+from .const import ATTR_STATUS, DOMAIN
+from .coordinator import GreenpointDataUpdateCoordinator
+from .device import GreenpointDevice, GreenpointDeviceEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up the Greenpoint IGH Compact switch platform."""
-    coordinator: GreenpointDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    """Set up Greenpoint IGH Compact switches based on config entry."""
+    coordinator: GreenpointDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Add switches for each unit
-    async_add_entities(
-        GreenpointSwitch(coordinator, unit)
-        for unit in coordinator.data
-        if unit.get("type") == "switch"
-    )
+    # Create a list to hold our entities
+    entities = []
 
-class GreenpointSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of a Greenpoint IGH Compact switch."""
+    # Create switch entities for each unit
+    for unit_id, unit_data in coordinator.data["units"].items():
+        # Create a device object
+        device = GreenpointDevice(unit_id, unit_data)
 
-    def __init__(
-        self,
-        coordinator: GreenpointDataUpdateCoordinator,
-        device: Dict[str, Any],
-    ) -> None:
+        # Check if this is a switch type unit (has status)
+        status = coordinator.data["status"].get(unit_id, {})
+        if ATTR_STATUS in status:
+            entities.append(GreenpointSwitch(coordinator, device))
+
+    # Add all entities to Home Assistant
+    async_add_entities(entities)
+
+
+class GreenpointSwitch(GreenpointDeviceEntity, SwitchEntity):
+    """Representation of a Greenpoint switch."""
+
+    def __init__(self, coordinator: GreenpointDataUpdateCoordinator, device: GreenpointDevice):
         """Initialize the switch."""
-        super().__init__(coordinator)
-        self.device = device
-        self._attr_name = device.get("name", "Unknown Switch")
-        self._attr_unique_id = f"{DOMAIN}_{device.get('full_id')}"
-        self._attr_is_on = device.get("status", 0) == 1
+        super().__init__(coordinator, device, "switch")
 
     @property
-    def device_info(self) -> Dict[str, Any]:
-        """Return device info."""
-        return {
-            "identifiers": {(DOMAIN, self.device.get("full_id"))},
-            "name": self._attr_name,
-            "manufacturer": "Greenpoint",
-            "model": "IGH Compact",
-        }
+    def is_on(self) -> bool | None:
+        """Return true if the switch is on."""
+        if not self.available:
+            return None
+
+        # Assuming status=1 means ON and status=0 means OFF
+        # This may need adjustment based on actual API behavior
+        return self.device_status.get(ATTR_STATUS) == 1
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        scenario_name = f"{self._attr_name} On"
-        _LOGGER.debug("Attempting to turn on switch %s using scenario: %s", self._attr_name, scenario_name)
+        # Create a scenario name based on the device name and "On"
+        scenario_name = f"{self.device.name} On"
         
-        # Get available scenarios
-        scenarios = await self.coordinator.api.get_scenarios()
-        _LOGGER.debug("Available scenarios: %s", scenarios)
-        
-        # Try to run the scenario
-        result = await self.coordinator.api.run_scenario(scenario_name)
-        _LOGGER.debug("Scenario execution result: %s", result)
-        
-        if result:
-            self._attr_is_on = True
-            self.async_write_ha_state()
-            # Schedule an immediate update
+        try:
+            await self.coordinator.api.run_scenario(scenario_name)
+            # Schedule an immediate data update
             await self.coordinator.async_request_refresh()
+        except Exception as exception:
+            _LOGGER.error("Failed to turn on %s: %s", self.name, exception)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
-        scenario_name = f"{self._attr_name} Off"
-        _LOGGER.debug("Attempting to turn off switch %s using scenario: %s", self._attr_name, scenario_name)
+        # Create a scenario name based on the device name and "Off"
+        scenario_name = f"{self.device.name} Off"
         
-        # Get available scenarios
-        scenarios = await self.coordinator.api.get_scenarios()
-        _LOGGER.debug("Available scenarios: %s", scenarios)
-        
-        # Try to run the scenario
-        result = await self.coordinator.api.run_scenario(scenario_name)
-        _LOGGER.debug("Scenario execution result: %s", result)
-        
-        if result:
-            self._attr_is_on = False
-            self.async_write_ha_state()
-            # Schedule an immediate update
+        try:
+            await self.coordinator.api.run_scenario(scenario_name)
+            # Schedule an immediate data update
             await self.coordinator.async_request_refresh()
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        for unit in self.coordinator.data:
-            if unit.get("full_id") == self.device.get("full_id"):
-                self.device = unit
-                self._attr_is_on = unit.get("status", 0) == 1
-                self.async_write_ha_state()
-                break
+        except Exception as exception:
+            _LOGGER.error("Failed to turn off %s: %s", self.name, exception)
