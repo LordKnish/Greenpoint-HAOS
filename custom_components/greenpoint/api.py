@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 from aiohttp import ClientSession
 
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
 from .const import (
     API_HOME,
     API_SCENARIO,
@@ -107,7 +109,7 @@ class GreenpointApiClient:
     def _get_session(self) -> ClientSession:
         """Get or create aiohttp ClientSession."""
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            self._session = async_get_clientsession()
         return self._session
 
     async def close(self) -> None:
@@ -118,7 +120,7 @@ class GreenpointApiClient:
 
 async def validate_input(host: str, port: int, token: str) -> Dict[str, Any]:
     """Validate the user input allows us to connect."""
-    async with aiohttp.ClientSession() as session:
+    async with async_get_clientsession() as session:
         client = GreenpointApiClient(host, port, token, session)
         
         try:

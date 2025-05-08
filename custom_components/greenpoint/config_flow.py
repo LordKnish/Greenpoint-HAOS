@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import CannotConnect, GreenpointApiClient, InvalidAuth
 from .const import DEFAULT_PORT, DOMAIN
@@ -20,6 +21,10 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Greenpoint IGH Compact."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        self._units: List[Dict[str, Any]] = []
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -34,7 +39,7 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     host=user_input[CONF_HOST],
                     port=user_input.get(CONF_PORT, DEFAULT_PORT),
                     token=user_input[CONF_TOKEN],
-                    session=self.hass.helpers.aiohttp_client.async_get_clientsession(),
+                    session=async_get_clientsession(self.hass),
                 )
 
                 # Test connection
@@ -42,12 +47,12 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     raise CannotConnect()
 
                 # Get units to check what scenarios need to be created
-                units = await client.get_unit_list()
-                if not units:
+                self._units = await client.get_unit_list()
+                if not self._units:
                     errors["base"] = "no_units"
                 else:
                     # Show scenario setup instructions
-                    return await self.async_step_scenario_setup(user_input, units)
+                    return await self.async_step_scenario_setup(user_input)
 
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -70,7 +75,7 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_scenario_setup(
-        self, user_input: Dict[str, Any], units: List[Dict[str, Any]]
+        self, user_input: Dict[str, Any]
     ) -> FlowResult:
         """Handle the scenario setup step."""
         errors = {}
@@ -87,7 +92,7 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Create list of required scenarios
         required_scenarios = []
-        for unit in units:
+        for unit in self._units:
             unit_name = unit.get("name", "Unknown")
             required_scenarios.extend([
                 f"{unit_name} On",
