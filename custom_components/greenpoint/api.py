@@ -1,17 +1,16 @@
-"""API client for Greenpoint IGH Compact."""
+"""API Client for Greenpoint IGH Compact."""
 import logging
+from typing import Any, Dict, List, Optional
+
 import aiohttp
-import async_timeout
-from typing import Dict, List, Any, Optional
+from aiohttp import ClientSession
 
 from .const import (
-    API_HOME,
     API_SCENARIO,
+    API_SCENARIO_LIST,
     API_UNIT,
-    ATTR_ROOMS,
-    ATTR_UNITS,
-    ATTR_NAME,
-    ATTR_FULL_ID,
+    API_UNIT_LIST,
+    API_VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,78 +22,128 @@ class InvalidAuth(Exception):
     """Error to indicate there is invalid auth."""
 
 class GreenpointApiClient:
-    """API client for Greenpoint IGH Compact."""
+    """API Client for Greenpoint IGH Compact."""
 
-    def __init__(self, host: str, port: int, token: str, session: aiohttp.ClientSession):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        token: str,
+        session: Optional[ClientSession] = None,
+    ) -> None:
         """Initialize the API client."""
-        self.host = host
-        self.port = port
-        self.token = token
-        self.session = session
-        self.base_url = f"http://{host}:{port}"
+        self._host = host
+        self._port = port
+        self._token = token
+        self._session = session
+        self._base_url = f"http://{host}:{port}"
 
     async def test_connection(self) -> bool:
-        """Test connectivity to the API."""
+        """Test the connection to the API."""
         try:
-            await self.get_home_data()
+            await self.get_unit_list()
             return True
-        except Exception as exception:
-            _LOGGER.error("Connection test failed: %s", exception)
+        except Exception as e:
+            _LOGGER.error("Failed to connect to API: %s", str(e))
             return False
 
-    async def get_home_data(self) -> Dict[str, Any]:
-        """Get home data from the API."""
-        return await self._api_request(f"{API_HOME}?token={self.token}")
+    async def get_unit_list(self) -> List[Dict[str, Any]]:
+        """Get list of units."""
+        try:
+            async with self._get_session() as session:
+                async with session.get(
+                    f"{self._base_url}{API_UNIT_LIST}?token={self._token}"
+                ) as response:
+                    if response.status == 401:
+                        raise InvalidAuth()
+                    response.raise_for_status()
+                    return await response.json()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error getting unit list: %s", err)
+            raise CannotConnect() from err
 
     async def get_unit_status(self, full_id: str) -> Dict[str, Any]:
-        """Get unit status from the API."""
-        return await self._api_request(f"{API_UNIT}/{full_id}?token={self.token}")
-
-    async def run_scenario(self, scene_name: str) -> Dict[str, Any]:
-        """Run a scenario by name."""
-        return await self._api_request(f"{API_SCENARIO}?name={scene_name}&token={self.token}")
-
-    async def get_all_units(self) -> List[Dict[str, Any]]:
-        """Get all units from all rooms."""
-        home_data = await self.get_home_data()
-        units = []
-
-        if ATTR_ROOMS not in home_data:
-            _LOGGER.error("No rooms found in home data")
-            return units
-
-        for room in home_data[ATTR_ROOMS]:
-            if ATTR_UNITS in room:
-                for unit in room[ATTR_UNITS]:
-                    # Add room name to unit data for reference
-                    unit["room_name"] = room.get(ATTR_NAME, "Unknown Room")
-                    units.append(unit)
-
-        return units
-
-    async def _api_request(self, endpoint: str) -> Dict[str, Any]:
-        """Make a request to the API."""
-        url = f"{self.base_url}{endpoint}"
-        
+        """Get unit status."""
         try:
-            async with async_timeout.timeout(10):
-                response = await self.session.get(url)
-                
-                if response.status == 401:
-                    raise InvalidAuth("Invalid authentication")
-                
-                response.raise_for_status()
-                return await response.json()
-                
-        except aiohttp.ClientResponseError as exception:
-            _LOGGER.error("Error fetching data: %s", exception)
-            raise
-        except aiohttp.ClientError as exception:
-            _LOGGER.error("Error connecting to API: %s", exception)
-            raise CannotConnect() from exception
-        except Exception as exception:
-            _LOGGER.error("Unexpected error: %s", exception)
-            raise
+            async with self._get_session() as session:
+                async with session.get(
+                    f"{self._base_url}{API_UNIT}/{full_id}?token={self._token}"
+                ) as response:
+                    if response.status == 401:
+                        raise InvalidAuth()
+                    response.raise_for_status()
+                    return await response.json()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error getting unit status: %s", err)
+            raise CannotConnect() from err
+
+    async def get_scenarios(self) -> List[Dict[str, Any]]:
+        """Get list of available scenarios."""
+        try:
+            async with self._get_session() as session:
+                async with session.get(
+                    f"{self._base_url}{API_SCENARIO_LIST}?token={self._token}"
+                ) as response:
+                    if response.status == 401:
+                        raise InvalidAuth()
+                    response.raise_for_status()
+                    return await response.json()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error getting scenarios: %s", err)
+            raise CannotConnect() from err
+
+    async def run_scenario(self, scenario_name: str) -> bool:
+        """Run a scenario by name."""
+        try:
+            # First try to run the scenario directly
+            async with self._get_session() as session:
+                async with session.get(
+                    f"{self._base_url}{API_SCENARIO}/{scenario_name}?token={self._token}"
+                ) as response:
+                    if response.status == 401:
+                        raise InvalidAuth()
+                    if response.status == 404:
+                        # If scenario not found, try to find a matching scenario
+                        scenarios = await self.get_scenarios()
+                        _LOGGER.debug("Available scenarios: %s", scenarios)
+                        
+                        # Look for a matching scenario
+                        matching_scenario = None
+                        for scenario in scenarios:
+                            if scenario.get("name") == scenario_name:
+                                matching_scenario = scenario
+                                break
+                        
+                        if matching_scenario:
+                            # Try running the matching scenario
+                            async with session.get(
+                                f"{self._base_url}{API_SCENARIO}/{matching_scenario['name']}?token={self._token}"
+                            ) as retry_response:
+                                if retry_response.status == 401:
+                                    raise InvalidAuth()
+                                retry_response.raise_for_status()
+                                return True
+                        else:
+                            _LOGGER.error("Scenario not found: %s", scenario_name)
+                            return False
+                    
+                    response.raise_for_status()
+                    return True
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error running scenario: %s", err)
+            raise CannotConnect() from err
+
+    def _get_session(self) -> ClientSession:
+        """Get or create aiohttp ClientSession."""
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        """Close the session."""
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
 
 async def validate_input(host: str, port: int, token: str) -> Dict[str, Any]:
     """Validate the user input allows us to connect."""

@@ -7,26 +7,16 @@ from typing import Any, Dict, Optional
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.exceptions import HomeAssistantError
-import homeassistant.helpers.config_validation as cv
 
-from .api import CannotConnect, InvalidAuth, validate_input
-from .const import DOMAIN, CONF_HOST, CONF_PORT, CONF_TOKEN, DEFAULT_PORT
+from .api import CannotConnect, GreenpointApiClient, InvalidAuth
+from .const import DEFAULT_PORT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): str,
-        vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
-        vol.Required(CONF_TOKEN): str,
-    }
-)
-
-
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Greenpoint IGH Compact."""
 
     VERSION = 1
@@ -35,31 +25,77 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Handle the initial step."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="user", data_schema=STEP_USER_DATA_SCHEMA
-            )
-
         errors = {}
 
-        try:
-            info = await validate_input(
-                user_input[CONF_HOST],
-                user_input[CONF_PORT],
-                user_input[CONF_TOKEN],
-            )
-        except CannotConnect:
-            errors["base"] = "cannot_connect"
-        except InvalidAuth:
-            errors["base"] = "invalid_auth"
-        except Exception:  # pylint: disable=broad-except
-            _LOGGER.exception("Unexpected exception")
-            errors["base"] = "unknown"
-        else:
-            return self.async_create_entry(title=info["title"], data=user_input)
+        if user_input is not None:
+            try:
+                # Create API client
+                client = GreenpointApiClient(
+                    host=user_input[CONF_HOST],
+                    port=user_input.get(CONF_PORT, DEFAULT_PORT),
+                    token=user_input[CONF_TOKEN],
+                    session=self.hass.helpers.aiohttp_client.async_get_clientsession(),
+                )
+
+                # Test connection
+                if not await client.test_connection():
+                    raise CannotConnect()
+
+                # Check if scenarios are set up
+                scenarios = await client.get_scenarios()
+                if not scenarios:
+                    return await self.async_step_scenario_setup(user_input)
+
+                # Create entry
+                return self.async_create_entry(
+                    title=f"IGH Compact ({user_input[CONF_HOST]})",
+                    data=user_input,
+                )
+
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST): str,
+                    vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+                    vol.Required(CONF_TOKEN): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_scenario_setup(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Handle the scenario setup step."""
+        errors = {}
+
+        if user_input is not None:
+            if user_input.get("confirm_setup"):
+                # Create entry
+                return self.async_create_entry(
+                    title=f"IGH Compact ({user_input[CONF_HOST]})",
+                    data=user_input,
+                )
+            else:
+                errors["base"] = "scenarios_not_setup"
+
+        return self.async_show_form(
+            step_id="scenario_setup",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("confirm_setup"): bool,
+                }
+            ),
+            errors=errors,
         )
 
     async def async_step_import(self, import_info):

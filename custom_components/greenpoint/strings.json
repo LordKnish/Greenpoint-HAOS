@@ -9,12 +9,20 @@
           "port": "Port (default: 20500)",
           "token": "API Token"
         }
+      },
+      "scenario_setup": {
+        "title": "Scenario Setup Required",
+        "description": "The IGH Compact system requires scenarios to be set up for device control. For each device you want to control, you need to create two scenarios:\n\n1. A scenario named '{device_name} On' to turn the device on\n2. A scenario named '{device_name} Off' to turn the device off\n\nFor example, if you have a light named 'Living Room Light', you need to create:\n- 'Living Room Light On'\n- 'Living Room Light Off'\n\nPlease set up these scenarios in your IGH Compact system before proceeding.",
+        "data": {
+          "confirm_setup": "I have set up the required scenarios"
+        }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "scenarios_not_setup": "Required scenarios are not set up"
     },
     "abort": {
       "already_configured": "Device is already configured"
