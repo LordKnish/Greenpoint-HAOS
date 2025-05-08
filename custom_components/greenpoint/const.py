@@ -14,6 +14,7 @@ DEFAULT_PORT = 20500
 API_HOME = "/home"
 API_SCENARIO = "/scenario"
 API_UNIT = "/unit"
+API_SCENARIO_LIST = "/scenario/list"
 
 # Data attributes
 ATTR_ROOMS = "rooms"
@@ -24,6 +25,7 @@ ATTR_TEMP = "temp"
 ATTR_SPAN_SECOND = "span_second"
 ATTR_MODE = "mode"
 ATTR_STATUS = "status"
+ATTR_SCENARIOS = "scenarios"
 
 # Update interval
 UPDATE_INTERVAL = 30  # seconds

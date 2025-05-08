@@ -1,13 +1,11 @@
 {
   "domain": "greenpoint",
   "name": "Greenpoint IGH Compact",
-  "documentation": "https://github.com/LordKnish/Greenpoint-HAOS",
-  "issue_tracker": "https://github.com/LordKnish/Greenpoint-HAOS/issues",
+  "documentation": "https://github.com/yourusername/greenpoint",
   "dependencies": [],
+  "codeowners": ["@yourusername"],
+  "requirements": ["aiohttp"],
+  "version": "1.0.0",
   "config_flow": true,
-  "codeowners": ["@LordKnish"],
-  "requirements": ["aiohttp>=3.8.1"],
-  "iot_class": "local_polling",
-  "version": "0.1.0",
-  "icon": "mdi:home-automation"
+  "iot_class": "local_polling"
 }

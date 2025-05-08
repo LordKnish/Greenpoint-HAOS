@@ -6,11 +6,12 @@ import aiohttp
 from aiohttp import ClientSession
 
 from .const import (
+    API_HOME,
     API_SCENARIO,
     API_SCENARIO_LIST,
     API_UNIT,
     API_UNIT_LIST,
-    API_VERSION,
+    ATTR_ROOMS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +47,21 @@ class GreenpointApiClient:
         except Exception as e:
             _LOGGER.error("Failed to connect to API: %s", str(e))
             return False
+
+    async def get_home_data(self) -> Dict[str, Any]:
+        """Get home data including rooms and units."""
+        try:
+            async with self._get_session() as session:
+                async with session.get(
+                    f"{self._base_url}{API_HOME}?token={self._token}"
+                ) as response:
+                    if response.status == 401:
+                        raise InvalidAuth()
+                    response.raise_for_status()
+                    return await response.json()
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Error getting home data: %s", err)
+            raise CannotConnect() from err
 
     async def get_unit_list(self) -> List[Dict[str, Any]]:
         """Get list of units."""

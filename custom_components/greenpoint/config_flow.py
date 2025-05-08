@@ -95,6 +95,9 @@ class GreenpointConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required("confirm_setup"): bool,
                 }
             ),
+            description_placeholders={
+                "scenario_setup_url": "https://github.com/your-repo/greenpoint-haos/wiki/Scenario-Setup",
+            },
             errors=errors,
         )
 

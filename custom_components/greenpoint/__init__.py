@@ -2,92 +2,59 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-import aiohttp
+from typing import Any, Dict
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import CannotConnect, GreenpointApiClient, InvalidAuth
-from .const import (
-    DOMAIN,
-    CONF_HOST,
-    CONF_PORT,
-    CONF_TOKEN,
-    DEFAULT_PORT,
-    UPDATE_INTERVAL,
-)
+from .api import GreenpointApiClient
+from .const import DEFAULT_PORT, DOMAIN
 from .coordinator import GreenpointDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# List of platforms to support
-PLATFORMS = ["sensor", "binary_sensor", "switch", "light"]
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Greenpoint IGH Compact from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-
-    # Get a ClientSession
-    session = async_get_clientsession(hass)
-
-    # Create API client
-    client = GreenpointApiClient(
-        host=entry.data[CONF_HOST],
-        port=entry.data.get(CONF_PORT, DEFAULT_PORT),
-        token=entry.data[CONF_TOKEN],
-        session=session,
-    )
-
-    # Validate the API connection (and authentication)
     try:
+        # Create API client
+        client = GreenpointApiClient(
+            host=entry.data[CONF_HOST],
+            port=entry.data.get(CONF_PORT, DEFAULT_PORT),
+            token=entry.data[CONF_TOKEN],
+            session=hass.helpers.aiohttp_client.async_get_clientsession(),
+        )
+
+        # Test connection
         if not await client.test_connection():
-            raise CannotConnect("Failed to connect to API")
-    except CannotConnect as exception:
-        _LOGGER.error("Cannot connect to IGH Compact API: %s", exception)
-        raise ConfigEntryNotReady from exception
-    except InvalidAuth as exception:
-        _LOGGER.error("Invalid authentication: %s", exception)
-        return False
-    except Exception as exception:
-        _LOGGER.error("Unexpected exception: %s", exception)
-        raise ConfigEntryNotReady from exception
+            raise ConfigEntryNotReady("Could not connect to IGH Compact")
 
-    # Create update coordinator
-    scan_interval = entry.options.get("scan_interval", UPDATE_INTERVAL)
-    coordinator = GreenpointDataUpdateCoordinator(hass, client, scan_interval)
+        # Create coordinator
+        coordinator = GreenpointDataUpdateCoordinator(hass, client)
+        await coordinator.async_config_entry_first_refresh()
 
-    # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
+        # Store coordinator
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Store the coordinator
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+        # Set up platforms
+        await hass.config_entries.async_forward_entry_setups(entry, ["switch", "light"])
 
-    # Set up all platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        return True
 
-    # Register options update listener
-    entry.async_on_unload(entry.add_update_listener(options_update_listener))
-
-    return True
-
+    except Exception as err:
+        _LOGGER.error("Error setting up Greenpoint IGH Compact: %s", err)
+        raise ConfigEntryNotReady from err
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     # Unload platforms
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["switch", "light"])
 
-    # Remove config entry from domain
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        # Remove coordinator
+        coordinator: GreenpointDataUpdateCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.api.close()
 
     return unload_ok
-
-
-async def options_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
-    await hass.config_entries.async_reload(entry.entry_id)
