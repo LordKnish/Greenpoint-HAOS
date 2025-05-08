@@ -14,6 +14,7 @@ DEFAULT_PORT = 20500
 API_HOME = "/home"
 API_SCENARIO = "/scenario"
 API_UNIT = "/unit"
+API_UNIT_LIST = "/unit/list"
 API_SCENARIO_LIST = "/scenario/list"
 
 # Data attributes
